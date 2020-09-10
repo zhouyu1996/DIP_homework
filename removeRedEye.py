@@ -1,85 +1,83 @@
 #!/usr/bin/python3
 # -*- encoding: utf-8 -*-
 """
-@File    : removeRedEye.py
-@Time    : 2019/10/26 11:55
+@File    : imgBeauty.py
+@Time    : 2019/10/26 13:02
 @Author  : yu zhou
-@content : 实现对人脸照片中的红眼去除
+@content : 对人脸进行美化
 @Software: PyCharm
 """
+
 import cv2
 import numpy as np
 
-# 填充模板空洞的函数
-def fillHoles(mask):
-    maskFloodfill = mask.copy()
-    h, w = maskFloodfill.shape[:2]
-    maskTemp = np.zeros((h + 2, w + 2), np.uint8)
-    cv2.floodFill(maskFloodfill, maskTemp, (0, 0), 255)
-    mask2 = cv2.bitwise_not(maskFloodfill)
-    return mask2 | mask
 
-# 定义去红眼的函数，接受带有红眼的3通道图像，返回同样大小的图像
-def removeRedEye(eye):
-    eyeout = eye.copy()
-    # 彩色图像分为rgb三个通道，opencv中imread得到的图像通道时bgr
-    b = eye[:, :, 0]
-    g = eye[:, :, 1]
-    r = eye[:, :, 2]
-    bg = cv2.add(b, g)
-    # 去红眼模板
-    mask = (r > 135) & (r > bg)
-    # 类型转换
-    mask = mask.astype(np.uint8) * 255
-    # 使用flooddill和膨胀操作填充模板MASK中的空洞
-    mask = fillHoles(mask)
-    mask1 = cv2.dilate(mask, None, anchor=(-1, -1), iterations=3, borderType=1, borderValue=1)
-    # if mask1.shape== mask.shape:
-    #     print("ds")
-    # 利用模板进行去红眼操作，使用了（b+g）/2替代r通道中超过阈值的pixel
-    mean = bg / 2
-    #mask = mask.astype(np.bool)[:, :, np.newaxis]
-    mean = mean[:, :, np.newaxis]
+def whitening(img):
+    imgInfo = img.shape
+    height = imgInfo[0]
+    width = imgInfo[1]
+    dst = np.zeros((height, width, 3), np.uint8)
+    for i in range(0, height):
+        for j in range(0, width):
+            (b, g, r) = img[i, j]
+            bb = int(b * 1.2) + 10
+            gg = int(g * 1.2) + 10
+            if bb > 255:
+                bb = 255
+            if gg > 255:
+                gg = 255
+            dst[i, j] = (bb, gg, r)
+    return dst
 
-    mask_f = np.zeros(mask1.shape,np.bool)
-    mask_f = mask_f[:, :, np.newaxis]
-    mask_f[:,:,0] = mask1
-    eyeout = np.where(mask_f, mean, eye)
+def buffing(img):
 
-    return eyeout
+    # src：输入图像
+    # d：过滤时周围每个像素领域的直径
+    # sigmaColor：在color space中过滤sigma。参数越大，临近像素将会在越远的地方mix。
+    # sigmaSpace：在coordinate space中过滤sigma。参数越大，那些颜色足够相近的的颜色的影响越大。
+    dst = cv2.bilateralFilter(img, 15, 35, 35)
+    dst = cv2.bilateralFilter(dst, 30, 50, 20)
+    return dst
 
-if __name__ == "__main__":
-    # 加载图像
-    img = cv2.imread("data/example1.jpg", cv2.IMREAD_COLOR)
-    #cv2.imshow("source",img)
+# 本来计划实现只对人脸区域的美白函数
+# 但是由于cv2中的人脸检测器给出的是矩形，且美白前后头像差别很大 因此还原后效果很差
+# 要实现这个可能可能需要基于人脸轮廓进行区域检测，且美白算法要比较自然
+# 留着此处将来有机会再进行优化
+def face_whitening(img):
+    facesCascade = cv2.CascadeClassifier("haarcascade_frontalface_alt2.xml")
+    # 完成人脸区域的检测
+    faces = facesCascade.detectMultiScale(img, scaleFactor=1.3, minNeighbors=2, minSize=(100, 100))
+    for (x, y, w, h) in faces:
+        # # 显示检测出的人脸区域
+        # tmp = img
+        # cv2.rectangle(tmp,(x, y), (x + w, y + h), (0, 255, 0), 2)
+        # cv2.imshow("face",tmp)
+
+        # 截取图像中的人脸区域
+        face = img[y:y + h, x:x + w]
+        # 对人脸进行美白
+        faceout = whitening(face)
+        # 将去除红眼之后的眼睛区域替换掉原来的红眼区域
+        img[y:y + h, x:x + w, :] = faceout
+        cv2.imshow('1',face)
+        cv2.imshow("2",faceout)
+        cv2.waitKey()
+    return img
+
+if __name__ =="__main__":
+    img =cv2.imread('data/beauty.jpg', cv2.IMREAD_COLOR)
     # opencv的imread方法不会判断读取的图像是否成功
     if img is None:
         print("加载图片失败")
     # 备份图像一遍输出对比
     imgCopy = img.copy()
-    # 加载opencv提供的级联眼睛检测器
-    # haarcascade_eye.xml是opencv提供的方法，可以根据参数检测眼睛区域
-    eyesCascade = cv2.CascadeClassifier("haarcascade_eye.xml")
-    # 完成眼部区域的检测
-    eyes = eyesCascade.detectMultiScale(img, scaleFactor=1.3, minNeighbors=4, minSize=(100, 100))
-    # 对每一个检测到的眼睛区域进行去红眼操作
-    for (x, y, w, h) in eyes:
-        # # 显示检测出的眼睛区域
-        # tmp = imgCopy
-        # cv2.rectangle(tmp,(x, y), (x + w, y + h), (0, 255, 0), 2)
-        # cv2.imshow("eye",tmp)
-
-        # 截取图像中的眼睛区域
-        eye = img[y:y + h, x:x + w]
-        # 去除截取部分的红眼
-        eyeOut = removeRedEye(eye)
-        # 将去除红眼之后的眼睛区域替换掉原来的红眼区域
-        imgCopy[y:y + h, x:x + w, :] = eyeOut
-        #
-        # cv2.rectangle(tmp,(x, y), (x + w, y + h), (0, 255, 0), 2)
-        # cv2.waitKey()
-    # 对比展示去红眼的结果
-    cv2.imshow('Red Eyes', img)
-    cv2.imshow('Red Eyes Removed', imgCopy)
+    # 对比展示
+    cv2.imshow('sourse',img)
+    #cv2.imshow('buffing', face_whitening(imgCopy))
+    #cv2.imshow('buffing',buffing(imgCopy))
+    #cv2.imshow('buffing+whitening', whitening(buffing(imgCopy)))
+    # cv2.waitKey()
+    #cv2.imshow('whitening', whitening(imgCopy))
+    cv2.imshow('whitening+buffing', buffing(whitening(imgCopy)))
     cv2.waitKey()
     cv2.destroyAllWindows()
